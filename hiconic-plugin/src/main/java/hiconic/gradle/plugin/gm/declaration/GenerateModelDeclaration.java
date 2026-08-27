@@ -66,7 +66,8 @@ public class GenerateModelDeclaration implements Action<Task> {
 		
         compileClasspath.getIncoming().getDependencies().forEach(dependency -> {
 			String modelName = dependency.getGroup() + ":" + dependency.getName();
-			modelDescriptor.dependencies.add(modelName);
+			if (modelName.endsWith("-model"))
+				modelDescriptor.dependencies.add(modelName);
         });
         
         // Get the project's source sets
