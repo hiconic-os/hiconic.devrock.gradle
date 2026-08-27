@@ -25,13 +25,13 @@ dependencies {
     implementation gradleApi()
     testImplementation gradleTestKit()
     
-    implementation 'org.apache.flink:flink-shaded-asm-9:9.6-18.0'
+    implementation 'org.apache.flink:flink-shaded-asm-9:9.9.1-21.0'
 }
 
 // Apply a specific Java toolchain to ease working on different environments.
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(8)
+        languageVersion = JavaLanguageVersion.of(25)
     }
 }
 
