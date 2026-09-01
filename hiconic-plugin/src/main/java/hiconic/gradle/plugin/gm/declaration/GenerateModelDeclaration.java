@@ -18,6 +18,7 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.UncheckedIOException;
 import java.io.Writer;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.security.DigestOutputStream;
@@ -85,13 +86,13 @@ public class GenerateModelDeclaration implements Action<Task> {
 		// Iterate over each source set to find all build folders
 		mainSourceSet.getOutput().getClassesDirs().forEach(dir -> {
 			buildFolders.add(dir);
-			cp.add(ClasspathTools.toUrl(dir));
+			cp.add(this.toUrl(dir));
 		});
 
 		// Get implementation dependencies
 		Configuration runtimeClasspath = project.getConfigurations().getByName("runtimeClasspath");
 		Set<File> runtimeClasspathFiles = runtimeClasspath.resolve();
-		runtimeClasspathFiles.stream().map(ClasspathTools::toUrl).forEach(cp::add);
+		runtimeClasspathFiles.stream().map(this::toUrl).forEach(cp::add);
 
 		Map<String, File> classes = new TreeMap<>();
 
@@ -121,7 +122,15 @@ public class GenerateModelDeclaration implements Action<Task> {
 		writeDescriptor(file, modelDescriptor);
 	}
 
-	public static void writeDescriptor(File file, ModelDescriptor modelDescriptor) {
+	private URL toUrl(File f) {
+		try {
+			return f.toURI().toURL();
+		} catch (MalformedURLException e) {
+			throw new UncheckedIOException(e);
+		}
+	}
+	
+	private static void writeDescriptor(File file, ModelDescriptor modelDescriptor) {
 		try (OutputStreamWriter writer = new OutputStreamWriter(new FileOutputStream(file), "UTF-8")) {
 			writeDescriptor(writer, modelDescriptor);
 		} catch (IOException e) {
@@ -129,7 +138,7 @@ public class GenerateModelDeclaration implements Action<Task> {
 		}
 	}
 
-	public static void writeDescriptor(Writer writer, ModelDescriptor modelDescriptor) throws IOException {
+	private static void writeDescriptor(Writer writer, ModelDescriptor modelDescriptor) throws IOException {
 		writer.write("<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n");
 		writer.write(
 				"<model-declaration xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:noNamespaceSchemaLocation=\"model-declaration-1.0.xsd\">\n\n");
@@ -179,7 +188,7 @@ public class GenerateModelDeclaration implements Action<Task> {
 		return sortedFiles.values();
 	}
 
-	public static String buildHash(Stream<File> fileStream) {
+	private static String buildHash(Stream<File> fileStream) {
 		try {
 			MessageDigest digest = MessageDigest.getInstance("MD5");
 
@@ -294,14 +303,10 @@ public class GenerateModelDeclaration implements Action<Task> {
 	private static void filterTypeCandidates(Project project, ClassLoader classLoader, Collection<String> classNames, Set<String> declaredTypes,
 			Map<String, Set<String>> forwardTypes) {
 
-		ModelReflection tools = ModelAsmReflection.scan(project, classLoader);
+		ModelReflection tools = ModelClassFileReflection.scan(project, classLoader);
 
 		for (String className : classNames) {
 			Entity entity = tools.load(className);
-			if (entity == null) {
-				System.out.println("no matching entity found for:" + className);
-				continue;
-			}
 			if (entity.getIsEnum() || entity.getIsGenericEntity()) {
 				String forwardModel = entity.getForwardDeclaration();
 				if (forwardModel == null) {

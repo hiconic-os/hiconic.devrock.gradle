@@ -35,6 +35,12 @@ java {
     }
 }
 
+// compile with the installed JDK 25, but target 24, which is the first release with the
+// Class-File API. So a gradle daemon on java 24 can load this plugin too.
+tasks.withType(JavaCompile).configureEach {
+    options.release = 24
+}
+
 gradlePlugin {
     plugins {
         myPlugin {
