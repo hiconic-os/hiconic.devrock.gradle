@@ -11,11 +11,9 @@ package hiconic.gradle.plugin;
 
 import java.io.File;
 
-import org.gradle.api.Action;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
-import org.gradle.api.artifacts.repositories.MavenArtifactRepository;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.SourceSetContainer;
 import org.gradle.api.tasks.TaskContainer;
@@ -59,21 +57,6 @@ public class HiconicPlugin implements Plugin<Project> {
 		mainSourceSet.setCompileClasspath(mainSourceSet.getCompileClasspath().plus(project.files("generated/main/java")));
 
 		configureEclipsePlugin(project);
-
-		project.getExtensions().add("mavenHiconicDev", (Action<String>) this::mavenHiconicDev);
-
-		// Define a custom action as a lambda and add it as an extra property
-		project.getExtensions().getExtraProperties().set("mavenHiconicDev", (Action<String>) this::mavenHiconicDev);
-	}
-
-	private Action<MavenArtifactRepository> mavenHiconicDev(String githubToken) {
-		return repo -> {
-			repo.setUrl("https://maven.pkg.github.com/hiconic-os/maven-repo-dev");
-			repo.credentials(c -> {
-				c.setUsername("ignored");
-				c.setPassword(githubToken);
-			});
-		};
 	}
 
 	private void configureEclipsePlugin(Project project) {
