@@ -4,15 +4,16 @@ The Hiconic Plugin for gradle helps to create and build generic models for the [
 
 Generic Models are interface based POJO/Bean models which are automatically implemented to offer additional value for generic algorithms and cross cutting concerns (e.g. efficient and elegant reflection, property access interceptors).
 
+
 ## Plugin Features
 
 ### Generation of Artifact Reflection
 
-`ArtifactReflection` is a way to automatically propagate a library's artifact coordinates from its build file onto its classpath. The `ArtifactReflection` is prepared to make it accessible with referential integrity for the support of type-safety and code completion.
+`ArtifactReflection` is a way to automatically propagate a library's artifact identification from its build file onto its classpath. The `ArtifactReflection` is prepared to make it accessible with referential integrity for the support of type-safety and code completion.
 
-The propagated coordinates are:
+The propagated values are:
 
-|artifact coordinate|gradle source property|example value|
+|artifact property|gradle source property|example value|
 |---|---|---|
 |`groupId`|group|my.group|
 |`artifactId`|name|my-model|
@@ -83,7 +84,7 @@ public class AccessExample {
 
 Each model can declare a number of entity types and enums types.
 
-The hiconic plugin will generate a model descriptor that reflects that model, its dependencies and types in a classpath resource named `generic-model-declaration.xml`
+The Hiconic plugin will generate a model descriptor that reflects that model, its dependencies and types in a classpath resource named `model-declaration.xml`
 
 given the following source:
 
@@ -115,9 +116,7 @@ import com.braintribe.model.generic.GenericEntity;
 import com.braintribe.model.generic.reflection.EntityType;
 import com.braintribe.model.generic.reflection.EntityTypes;
 
-/* 
-If a type has no other super type from a model it derives at least from GenericEntity.
-*/
+/* If a type has no other super type from a model it derives at least from GenericEntity.*/
 public interface Person extends GenericEntity {
     // Type literal for construction and reflection
 	EntityType<Person> T = EntityTypes.T(Person.class);
@@ -133,7 +132,7 @@ public interface Person extends GenericEntity {
 
 ### Eclipse support
 
-The hiconic plugin for grade automatically detects the presence of the optional eclipse plugin for gradle to properly configure eclipse classpath and auto building.
+The Hiconic plugin for Gradle automatically detects the presence of the optional Eclipse plugin for Gradle to properly configure Eclipse classpath and auto building.
 
 ## Gradle Build Script for Model Projects
 
@@ -183,4 +182,55 @@ dependencies {
     implementation "com.braintribe.gm:root-model:[2.0,2.1)"
 }
 ```
+
+### Requirements
+
+These two conditions apply to the build of the group, not to the script:
+
+* this plugin must be available to the group. As long as it is not published, each developer installs it locally with `./gradlew publishToMavenLocal` in `hiconic-plugin`.
+* the Gradle daemon needs Java 24 or newer, because the plugin uses JDK's Class-File API.
+
+
+
+## Generating the Gradle Files for a Hiconic Group
+
+`scripts/gradlize-group.sh` generates the Gradle build files for a whole Hiconic artifact group, so that an IDE such as IntelliJ can import the group and run this plugin on each build. The `pom.xml` files stay the source of truth: the script reads them and never changes them.
+
+The script writes:
+
+|file|content|
+|---|---|
+|`settings.gradle`|the group root project, with one `include` per code artifact|
+|`build.gradle`|the group root, with the common configuration for all artifacts: repositories, source layout `src`, and the java release taken from the `java.version` property of the group parent pom|
+|`<artifact>/build.gradle`|version, `ext.archetype`, `apply plugin: 'hiconic'`, and the dependencies|
+
+A dependency inside the group becomes `api project(':<artifact>')`, so a source change is visible to its dependers at once. A dependency outside the group keeps its version, also a version range, which Gradle resolves as a dynamic version. The configuration `api` is used, not `implementation`, because the `compile` scope of maven is transitive on the compile classpath of a depender.
+
+### Usage
+
+```bash
+# from the group root
+./scripts/gradlize-group.sh .
+
+# or for another group
+./scripts/gradlize-group.sh /path/to/the/group
+
+# show the changes without writing them
+./scripts/gradlize-group.sh -n .
+```
+
+Run the script again after a `pom.xml` changed. A second run with no change to the poms produces no change.
+
+The script itself needs only bash with `awk` and `sed`. On windows, Git Bash is sufficient.
+
+### Configuration
+
+Three lists at the top of the script:
+
+* `REPOSITORIES` - the repositories written into the generated root `build.gradle`, in the form `name|url|token-env-var`.
+* `EXCLUDED_ARTIFACTS` - artifact directories that must not become Gradle projects. A dependency on such an artifact stays a coordinate dependency, so it comes from a repository instead of from the sources.
+* `PLUGIN_COORDINATES` - the version of this plugin.
+
+An artifact without a `src` directory never becomes a Gradle project. That covers the group parent, assets, setups, and repository views. The script reports each artifact that it skips, and each dependency that it drops, for example an asset dependency with `<classifier>asset</classifier>`.
+
 
