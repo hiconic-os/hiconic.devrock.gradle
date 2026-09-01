@@ -9,7 +9,8 @@
 // ============================================================================
 package hiconic.gradle.plugin.gm.declaration;
 
-public interface ModelReflection {	
+public interface ModelReflection {
+
 	Entity load(String className);
 
 }

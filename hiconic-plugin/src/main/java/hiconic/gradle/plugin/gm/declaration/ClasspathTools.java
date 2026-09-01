@@ -10,10 +10,9 @@
 package hiconic.gradle.plugin.gm.declaration;
 
 import java.io.File;
+import java.io.UncheckedIOException;
 import java.net.MalformedURLException;
 import java.net.URL;
-
-import org.gradle.api.UncheckedIOException;
 
 public class ClasspathTools {
 	public static URL toUrl(File f) {
@@ -21,6 +20,6 @@ public class ClasspathTools {
 			return f.toURI().toURL();
 		} catch (MalformedURLException e) {
 			throw new UncheckedIOException(e);
-		}		
+		}
 	}
 }
