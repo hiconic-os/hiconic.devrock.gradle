@@ -22,7 +22,6 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.gradle.api.GradleException;
-import org.gradle.api.Project;
 
 /**
  * {@link ModelReflection} based on the Class-File API of the JDK (since Java 24) - thus we don't need any external deps.
@@ -36,17 +35,17 @@ public class ModelClassFileReflection implements ModelReflection {
 	private static final String GENERIC_ENTITY_NAME = "com/braintribe/model/generic/GenericEntity";
 	private static final String FORWARD_ANNOTATION_DESCRIPTOR = "Lcom/braintribe/model/generic/annotation/ForwardDeclaration;";
 
-	private final Project project;
+	private final String projectName;
 	private final ClassLoader classLoader;
 	private final Map<String, Entity> nameToEntityMap = new HashMap<>();
 
-	public ModelClassFileReflection(Project project, ClassLoader classLoader) {
-		this.project = project;
+	public ModelClassFileReflection(String projectName, ClassLoader classLoader) {
+		this.projectName = projectName;
 		this.classLoader = classLoader;
 	}
 
-	public static ModelReflection scan(Project project, ClassLoader classLoader) {
-		return new ModelClassFileReflection(project, classLoader);
+	public static ModelReflection scan(String projectName, ClassLoader classLoader) {
+		return new ModelClassFileReflection(projectName, classLoader);
 	}
 
 	@Override
@@ -58,7 +57,7 @@ public class ModelClassFileReflection implements ModelReflection {
 		try (InputStream in = classLoader.getResourceAsStream(internalName + ".class")) {
 			return in == null ? null : in.readAllBytes();
 		} catch (IOException e) {
-			throw new GradleException("Cannot read class file of [" + internalName.replace('/', '.') + "] (project: " + project.getName() + ")", e);
+			throw new GradleException("Cannot read class file of [" + internalName.replace('/', '.') + "] (project: " + projectName + ")", e);
 		}
 	}
 
@@ -127,7 +126,7 @@ public class ModelClassFileReflection implements ModelReflection {
 		}
 
 		if (entity == null)
-			throw new GradleException("Cannot analyze model of project [" + project.getName() + "], type not found on classpath: ["
+			throw new GradleException("Cannot analyze model of project [" + projectName + "], type not found on classpath: ["
 					+ internalName.replace('/', '.') + "]. If it is a super type of one of your types, maybe a dependency is missing?");
 
 		return entity;

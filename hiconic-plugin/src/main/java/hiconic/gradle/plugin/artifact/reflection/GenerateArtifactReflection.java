@@ -23,12 +23,12 @@ import java.util.StringTokenizer;
 import org.apache.flink.shaded.asm9.org.objectweb.asm.ClassWriter;
 import org.apache.flink.shaded.asm9.org.objectweb.asm.MethodVisitor;
 import org.apache.flink.shaded.asm9.org.objectweb.asm.Opcodes;
+import hiconic.gradle.plugin.ProjectInfo;
 import org.gradle.api.Action;
-import org.gradle.api.Project;
 import org.gradle.api.Task;
 
 /**
- * The GenerateArtifactReflection action can generate artifact reflection based on a Gradle {@link Project}
+ * The GenerateArtifactReflection action can generate artifact reflection for given Gradle artifact.
  * <p>
  * The output is stored in the resources build-output and consists of two files per artifact:
  * <ul>
@@ -47,35 +47,23 @@ import org.gradle.api.Task;
  */
 public class GenerateArtifactReflection implements Action<Task>, Opcodes {
 
+	private final ProjectInfo projectInfo;
+
+	public GenerateArtifactReflection(ProjectInfo projectInfo) {
+		this.projectInfo = projectInfo;
+	}
+
 	@Override
 	public void execute(Task t) {
-		new StatefulGenerator(t.getProject()).generate();
+		new StatefulGenerator().generate();
 	}
 
 	/* Internal helper class for properly {@link Reason}ed artifact reflection generation. */
 	private class StatefulGenerator {
 
-		String groupId;
-		String artifactId;
-		String version;
-		String archetype;
-		File classesFolder; // output
-
 		private String canonizedGroupdId;
 		private String canonizedArtifactId;
 		private String className;
-		private final Project project;
-
-		public StatefulGenerator(Project project) {
-			this.project = project;
-
-			groupId = project.getGroup().toString();
-			artifactId = project.getName();
-			version = project.getVersion().toString();
-			archetype = (String) project.findProperty("archetype");
-
-			classesFolder = new File(project.getProjectDir(), "generated/main/java");
-		}
 
 		public void generate() {
 			byte classData[] = generateClassWithAsm();
@@ -87,7 +75,7 @@ public class GenerateArtifactReflection implements Action<Task>, Opcodes {
 			try {
 				ClassWriter classWriter = new ClassWriter(0);
 
-				String className = buildCanonizedClassName(groupId, artifactId);
+				String className = buildCanonizedClassName();
 
 				String internalName = className.replace('.', '/');
 				String superName = "java/lang/Object";
@@ -103,12 +91,12 @@ public class GenerateArtifactReflection implements Action<Task>, Opcodes {
 				// build class initializer
 				MethodVisitor mv = classWriter.visitMethod(ACC_PUBLIC + ACC_STATIC, "<clinit>", "()V", null, null);
 
-				String name = groupId + ":" + artifactId;
-				String versionedName = name + "#" + version;
+				String name = projectInfo.groupId + ":" + projectInfo.artifactId;
+				String versionedName = name + "#" + projectInfo.version;
 
-				fillStaticField(classWriter, internalName, mv, "groupId", groupId);
-				fillStaticField(classWriter, internalName, mv, "artifactId", artifactId);
-				fillStaticField(classWriter, internalName, mv, "version", version);
+				fillStaticField(classWriter, internalName, mv, "groupId", projectInfo.groupId);
+				fillStaticField(classWriter, internalName, mv, "artifactId", projectInfo.artifactId);
+				fillStaticField(classWriter, internalName, mv, "version", projectInfo.version);
 				fillStaticField(classWriter, internalName, mv, "name", name);
 				fillStaticField(classWriter, internalName, mv, "versionedName", versionedName);
 
@@ -121,11 +109,11 @@ public class GenerateArtifactReflection implements Action<Task>, Opcodes {
 				mv.visitInsn(DUP);
 
 				// push constructor arguments on stack: groupId, artifactId, version, archetype
-				mv.visitLdcInsn(groupId);
-				mv.visitLdcInsn(artifactId);
-				mv.visitLdcInsn(version);
-				if (archetype != null)
-					mv.visitLdcInsn(archetype);
+				mv.visitLdcInsn(projectInfo.groupId);
+				mv.visitLdcInsn(projectInfo.artifactId);
+				mv.visitLdcInsn(projectInfo.version);
+				if (projectInfo.archetype != null)
+					mv.visitLdcInsn(projectInfo.archetype);
 				else
 					mv.visitInsn(ACONST_NULL);
 
@@ -142,7 +130,7 @@ public class GenerateArtifactReflection implements Action<Task>, Opcodes {
 
 				return classWriter.toByteArray();
 			} catch (Exception e) {
-				throw new RuntimeException("Error while compiling artifact reflection information to bytecode for project: " + project.getName(), e);
+				throw new RuntimeException("Error while compiling artifact reflection information to bytecode for project: " + projectInfo.artifactId, e);
 			}
 		}
 
@@ -157,16 +145,16 @@ public class GenerateArtifactReflection implements Action<Task>, Opcodes {
 			mv.visitFieldInsn(PUTSTATIC, internalName, name, stringDesc);
 		}
 
-		private String buildCanonizedClassName(String groupId, String artifactId) {
+		private String buildCanonizedClassName() {
 
-			canonizedGroupdId = canonizedGroupdId(groupId);
-			canonizedArtifactId = canonizedArtifactId(artifactId);
+			canonizedGroupdId = canonizedGroupdId(projectInfo.groupId);
+			canonizedArtifactId = canonizedArtifactId(projectInfo.artifactId);
 			className = canonizedGroupdId + "." + canonizedArtifactId;
 			return className;
 		}
 
 		private void writeArtifactReflection(byte[] classBytes) {
-			File targetFile = classesFolder.toPath().resolve(canonizedGroupdId.replace('.', '/')).resolve(canonizedArtifactId + ".class").toFile();
+			File targetFile = projectInfo.generatedFolder().toPath().resolve(canonizedGroupdId.replace('.', '/')).resolve(canonizedArtifactId + ".class").toFile();
 
 			try {
 				targetFile.getParentFile().mkdirs();
@@ -174,24 +162,24 @@ public class GenerateArtifactReflection implements Action<Task>, Opcodes {
 					out.write(classBytes);
 				}
 			} catch (IOException e) {
-				throw new UncheckedIOException("Failed write class file:" + targetFile.getAbsolutePath() + " for project: " + project.getName(), e);
+				throw new UncheckedIOException("Failed write class file:" + targetFile.getAbsolutePath() + " for project: " + projectInfo.artifactId, e);
 			}
 		}
 
 		private void writeMetaInf() {
 
-			File targetFile = classesFolder.toPath().resolve("META-INF").resolve("artifact-descriptor.properties").toFile();
+			File targetFile = projectInfo.generatedFolder().toPath().resolve("META-INF").resolve("artifact-descriptor.properties").toFile();
 
 			try {
 				targetFile.getParentFile().mkdirs();
 
 				HashMap<String, String> properties = new LinkedHashMap<>();
-				properties.put("groupId", groupId);
-				properties.put("artifactId", artifactId);
-				properties.put("version", version);
+				properties.put("groupId", projectInfo.groupId);
+				properties.put("artifactId", projectInfo.artifactId);
+				properties.put("version", projectInfo.version);
 
-				if (archetype != null)
-					properties.put("archetypes", archetype);
+				if (projectInfo.archetype != null)
+					properties.put("archetypes", projectInfo.archetype);
 
 				properties.put("reflection-class", className);
 
@@ -204,7 +192,7 @@ public class GenerateArtifactReflection implements Action<Task>, Opcodes {
 				}
 			} catch (IOException e) {
 				throw new UncheckedIOException(
-						"Failed write artifact-reflection file:" + targetFile.getAbsolutePath() + " for project: " + project.getName(), e);
+						"Failed write artifact-reflection file:" + targetFile.getAbsolutePath() + " for project: " + projectInfo.artifactId, e);
 			}
 		}
 

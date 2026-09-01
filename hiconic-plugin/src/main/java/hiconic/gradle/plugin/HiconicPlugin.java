@@ -16,11 +16,10 @@ import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
 import org.gradle.api.artifacts.repositories.MavenArtifactRepository;
-import org.gradle.api.credentials.HttpHeaderCredentials;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.SourceSetContainer;
+import org.gradle.api.tasks.TaskContainer;
 import org.gradle.api.tasks.TaskProvider;
-import org.gradle.authentication.http.HttpHeaderAuthentication;
 import org.gradle.plugins.ide.eclipse.model.AbstractClasspathEntry;
 import org.gradle.plugins.ide.eclipse.model.EclipseModel;
 import org.gradle.plugins.ide.eclipse.model.Library;
@@ -32,28 +31,25 @@ public class HiconicPlugin implements Plugin<Project> {
 
 	@Override
 	public void apply(Project project) {
-		String archetype = (String) project.findProperty("archetype");
+		TaskContainer tasks = project.getTasks();
 
-		GenerateArtifactReflection generateArtifactReflection = new GenerateArtifactReflection();
+		TaskProvider<Task> generateArtifactReflectionTask = tasks.register("generate-artifact-reflection", task -> task.setGroup("hiconic"));
 
-		Task generateArtifactReflectioTask = project.task("generate-artifact-reflection", task -> {
-			task.setGroup("hiconic");
-			task.doLast(generateArtifactReflection);
+		TaskProvider<Task> compileTask = tasks.named("compileJava");
+
+		compileTask.configure(task -> task.dependsOn(generateArtifactReflectionTask));
+
+		// the actions are created after the build script of the project was evaluated, so that
+		// group, version and archetype are final, and so that all values they need are read at
+		// configuration time. An action must not touch the project while it runs.
+		project.afterEvaluate(p -> {
+			ProjectInfo projectInfo = ProjectInfo.createFrom(p);
+
+			generateArtifactReflectionTask.configure(task -> task.doLast(new GenerateArtifactReflection(projectInfo)));
+
+			if (projectInfo.isModel())
+				compileTask.configure(task -> task.doLast(new GenerateModelDeclaration(projectInfo)));
 		});
-
-		TaskProvider<Task> compileTask = project.getTasks().named("compileJava");
-
-		compileTask.configure(task -> {
-			task.dependsOn(generateArtifactReflectioTask);
-		});
-
-		if ("model".equals(archetype)) {
-			GenerateModelDeclaration generateModelDeclaration = new GenerateModelDeclaration();
-
-			compileTask.configure(task -> {
-				task.doLast(generateModelDeclaration);
-			});
-		}
 
 		SourceSetContainer sourceSets = project.getExtensions().getByType(SourceSetContainer.class);
 

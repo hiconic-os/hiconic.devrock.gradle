@@ -39,82 +39,69 @@ import java.util.stream.Stream;
 import javax.xml.parsers.DocumentBuilderFactory;
 
 import org.gradle.api.Action;
-import org.gradle.api.GradleException;
-import org.gradle.api.Project;
 import org.gradle.api.Task;
-import org.gradle.api.artifacts.Configuration;
-import org.gradle.api.tasks.SourceSet;
-import org.gradle.api.tasks.SourceSetContainer;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 
+import hiconic.gradle.plugin.ProjectInfo;
+
 public class GenerateModelDeclaration implements Action<Task> {
 	private static final String JAVA_CLASS_EXT = ".class";
+
+	private final ProjectInfo projectInfo;
+
+	public GenerateModelDeclaration(ProjectInfo projectInfo) {
+		this.projectInfo = projectInfo;
+	}
 
 	@Override
 	public void execute(Task t) {
 
-		Project project = t.getProject();
-		Configuration compileClasspath = project.getConfigurations().getByName("implementation");
-
 		ModelDescriptor modelDescriptor = new ModelDescriptor();
 
-		modelDescriptor.groupId = project.getGroup().toString();
-		modelDescriptor.artifactId = project.getName();
-		modelDescriptor.version = project.getVersion().toString();
-		modelDescriptor.name = modelDescriptor.groupId + ":" + modelDescriptor.artifactId;
+		modelDescriptor.groupId = projectInfo.groupId;
+		modelDescriptor.artifactId = projectInfo.artifactId;
+		modelDescriptor.version = projectInfo.version;
+		modelDescriptor.name = projectInfo.name();
+		modelDescriptor.dependencies.addAll(projectInfo.modelDependencies);
 
-		compileClasspath.getIncoming().getDependencies().forEach(dependency -> {
-			String modelName = dependency.getGroup() + ":" + dependency.getName();
-			if (modelName.endsWith("-model"))
-				modelDescriptor.dependencies.add(modelName);
-		});
-
-		// Get the project's source sets
-		SourceSetContainer sourceSets = (SourceSetContainer) project.findProperty("sourceSets");
-		if (sourceSets == null)
-			throw new GradleException("Cannot write model declaration, sourceSets not found for this Gradle project (" + project.getName() + ")");
-
-		SourceSet mainSourceSet = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME);
-
-		File targetFolder = new File(project.getProjectDir(), "generated/main/java");
+		File targetFolder = projectInfo.generatedFolder();
 
 		List<File> buildFolders = new ArrayList<>();
 		List<URL> cp = new ArrayList<>();
 
-		// Iterate over each source set to find all build folders
-		mainSourceSet.getOutput().getClassesDirs().forEach(dir -> {
+		projectInfo.classesDirs.forEach(dir -> {
 			buildFolders.add(dir);
 			cp.add(this.toUrl(dir));
 		});
 
-		// Get implementation dependencies
-		Configuration runtimeClasspath = project.getConfigurations().getByName("runtimeClasspath");
-		Set<File> runtimeClasspathFiles = runtimeClasspath.resolve();
-		runtimeClasspathFiles.stream().map(this::toUrl).forEach(cp::add);
+		projectInfo.runtimeClasspath.getFiles().stream().map(this::toUrl).forEach(cp::add);
 
 		Map<String, File> classes = new TreeMap<>();
 
 		for (File scanFolder : buildFolders)
 			scanTypeCandidates(null, scanFolder, classes);
 
-		URLClassLoader classLoader = new URLClassLoader(cp.toArray(new URL[cp.size()]), null);
+		try (URLClassLoader classLoader = new URLClassLoader(cp.toArray(new URL[cp.size()]), null)) {
 
-		filterTypeCandidates(project, classLoader, classes.keySet(), modelDescriptor.declaredTypes, modelDescriptor.forwardTypes);
+			filterTypeCandidates(projectInfo.artifactId, classLoader, classes.keySet(), modelDescriptor.declaredTypes, modelDescriptor.forwardTypes);
 
-		Collection<File> sortedClassFiles = createSortedClassFiles(classes);
+			Collection<File> sortedClassFiles = createSortedClassFiles(classes);
 
-		File descriptor = new File(project.getProjectDir(), "build.gradle");
+			File descriptor = new File(projectInfo.projectDir, "build.gradle");
 
-		modelDescriptor.hash = buildHash(Stream.concat(Stream.of(descriptor), sortedClassFiles.stream()));
+			modelDescriptor.hash = buildHash(Stream.concat(Stream.of(descriptor), sortedClassFiles.stream()));
 
-		Map<String, Set<String>> forwards = scanForwards(classLoader);
+			Map<String, Set<String>> forwards = scanForwards(classLoader);
 
-		Set<String> forwardTypes = forwards.get(modelDescriptor.name);
+			Set<String> forwardTypes = forwards.get(modelDescriptor.name);
 
-		if (forwardTypes != null) {
-			modelDescriptor.declaredTypes.addAll(forwardTypes);
+			if (forwardTypes != null) {
+				modelDescriptor.declaredTypes.addAll(forwardTypes);
+			}
+		} catch (IOException e) {
+			throw new UncheckedIOException("Failed to analyze the classes of project: " + projectInfo.artifactId, e);
 		}
 
 		File file = new File(targetFolder, "model-declaration.xml");
@@ -300,10 +287,10 @@ public class GenerateModelDeclaration implements Action<Task> {
 		}
 	}
 
-	private static void filterTypeCandidates(Project project, ClassLoader classLoader, Collection<String> classNames, Set<String> declaredTypes,
+	private static void filterTypeCandidates(String projectName, ClassLoader classLoader, Collection<String> classNames, Set<String> declaredTypes,
 			Map<String, Set<String>> forwardTypes) {
 
-		ModelReflection tools = ModelClassFileReflection.scan(project, classLoader);
+		ModelReflection tools = ModelClassFileReflection.scan(projectName, classLoader);
 
 		for (String className : classNames) {
 			Entity entity = tools.load(className);
