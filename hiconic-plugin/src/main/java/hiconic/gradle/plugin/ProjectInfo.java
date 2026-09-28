@@ -39,10 +39,11 @@ public class ProjectInfo {
 	/** the class output folders of the main source set */
 	public final FileCollection classesDirs;
 
-	public final FileCollection runtimeClasspath;
+	/**Compile classpath, which resolves dependency classes from their compile outputs, rather than jars. */
+	public final FileCollection compileClasspath;
 
 	public ProjectInfo(String groupId, String artifactId, String version, String archetype, File projectDir, List<String> modelDependencies,
-			FileCollection classesDirs, FileCollection runtimeClasspath) {
+			FileCollection classesDirs, FileCollection compileClasspath) {
 		this.groupId = groupId;
 		this.artifactId = artifactId;
 		this.version = version;
@@ -50,7 +51,7 @@ public class ProjectInfo {
 		this.projectDir = projectDir;
 		this.modelDependencies = modelDependencies;
 		this.classesDirs = classesDirs;
-		this.runtimeClasspath = runtimeClasspath;
+		this.compileClasspath = compileClasspath;
 	}
 
 	public static ProjectInfo createFrom(Project project) {
@@ -72,7 +73,7 @@ public class ProjectInfo {
 				project.getProjectDir(), //
 				modelDependencies, //
 				mainSourceSet.getOutput().getClassesDirs(), //
-				project.getConfigurations().getByName("runtimeClasspath"));
+				mainSourceSet.getCompileClasspath());
 	}
 
 	/** the folder for the generated artifact reflection, model declaration and properties */

@@ -76,7 +76,7 @@ public class GenerateModelDeclaration implements Action<Task> {
 			cp.add(this.toUrl(dir));
 		});
 
-		projectInfo.runtimeClasspath.getFiles().stream().map(this::toUrl).forEach(cp::add);
+		projectInfo.compileClasspath.getFiles().stream().map(this::toUrl).forEach(cp::add);
 
 		Map<String, File> classes = new TreeMap<>();
 
