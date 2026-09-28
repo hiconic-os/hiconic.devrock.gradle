@@ -19,13 +19,7 @@ repositories {
 }
 
 dependencies {
-    // Use JUnit test framework.
-    testImplementation libs.junit
-
     implementation gradleApi()
-    testImplementation gradleTestKit()
-    
-    implementation 'org.apache.flink:flink-shaded-asm-9:9.9.1-21.0'
 }
 
 // Apply a specific Java toolchain to ease working on different environments.

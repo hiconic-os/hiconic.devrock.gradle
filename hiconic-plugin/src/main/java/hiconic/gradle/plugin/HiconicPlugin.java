@@ -12,6 +12,8 @@ package hiconic.gradle.plugin;
 import java.io.File;
 
 import org.gradle.api.Plugin;
+import org.gradle.api.file.ConfigurableFileCollection;
+import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
 import org.gradle.api.tasks.SourceSet;
@@ -26,6 +28,8 @@ import hiconic.gradle.plugin.artifact.reflection.GenerateArtifactReflection;
 import hiconic.gradle.plugin.gm.declaration.GenerateModelDeclaration;
 
 public class HiconicPlugin implements Plugin<Project> {
+
+	private static final String GENERATED_FOLDER = "generated/main/java";
 
 	@Override
 	public void apply(Project project) {
@@ -53,10 +57,31 @@ public class HiconicPlugin implements Plugin<Project> {
 
 		// Configure the main source set to include additional resources
 		SourceSet mainSourceSet = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME);
-		mainSourceSet.getResources().srcDir("generated/main/java");
-		mainSourceSet.setCompileClasspath(mainSourceSet.getCompileClasspath().plus(project.files("generated/main/java")));
+		mainSourceSet.getResources().srcDir(GENERATED_FOLDER);
+
+		publishGeneratedClassesToConsumers(project, generateArtifactReflectionTask);
 
 		configureEclipsePlugin(project);
+	}
+
+	/**
+	 * The generated folder holds class files, but it is neither the class output of the java
+	 * compiler nor part of it. Without this, a project that depends on this one does not see the
+	 * artifact reflection: a project dependency is resolved to the "classes" variant, which holds
+	 * only the class output of the compiler.
+	 * <p>
+	 * The folder is added as a file dependency of the api configuration, and not as an artifact of
+	 * the outgoing variants, because an IDE also understands a file dependency. It is exported to
+	 * the consumers of this project, and it is on the compile classpath of this project itself.
+	 */
+	private void publishGeneratedClassesToConsumers(Project project, TaskProvider<Task> generateTask) {
+		ConfigurableFileCollection generatedClasses = project.files(GENERATED_FOLDER).builtBy(generateTask);
+
+		String configuration = project.getConfigurations().findByName(JavaPlugin.API_CONFIGURATION_NAME) != null //
+				? JavaPlugin.API_CONFIGURATION_NAME //
+				: JavaPlugin.IMPLEMENTATION_CONFIGURATION_NAME;
+
+		project.getDependencies().add(configuration, generatedClasses);
 	}
 
 	private void configureEclipsePlugin(Project project) {

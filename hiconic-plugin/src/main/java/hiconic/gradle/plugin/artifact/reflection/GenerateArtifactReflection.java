@@ -9,20 +9,28 @@
 // ============================================================================
 package hiconic.gradle.plugin.artifact.reflection;
 
+import static java.lang.classfile.ClassFile.JAVA_6_VERSION;
+import static java.lang.constant.ConstantDescs.CD_String;
+import static java.lang.constant.ConstantDescs.CD_void;
+import static java.lang.constant.ConstantDescs.CLASS_INIT_NAME;
+import static java.lang.constant.ConstantDescs.INIT_NAME;
+import static java.lang.constant.ConstantDescs.MTD_void;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
+import java.lang.classfile.ClassFile;
+import java.lang.classfile.CodeBuilder;
+import java.lang.constant.ClassDesc;
+import java.lang.constant.MethodTypeDesc;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.StringTokenizer;
 
-import org.apache.flink.shaded.asm9.org.objectweb.asm.ClassWriter;
-import org.apache.flink.shaded.asm9.org.objectweb.asm.MethodVisitor;
-import org.apache.flink.shaded.asm9.org.objectweb.asm.Opcodes;
 import hiconic.gradle.plugin.ProjectInfo;
 import org.gradle.api.Action;
 import org.gradle.api.Task;
@@ -45,7 +53,7 @@ import org.gradle.api.Task;
  * 
  * @author Dirk Scheffler
  */
-public class GenerateArtifactReflection implements Action<Task>, Opcodes {
+public class GenerateArtifactReflection implements Action<Task> {
 
 	private final ProjectInfo projectInfo;
 
@@ -66,83 +74,69 @@ public class GenerateArtifactReflection implements Action<Task>, Opcodes {
 		private String className;
 
 		public void generate() {
-			byte classData[] = generateClassWithAsm();
+			byte classData[] = generateClass();
 			writeArtifactReflection(classData);
 			writeMetaInf();
 		}
 
-		private byte[] generateClassWithAsm() {
+		private byte[] generateClass() {
 			try {
-				ClassWriter classWriter = new ClassWriter(0);
-
 				String className = buildCanonizedClassName();
 
-				String internalName = className.replace('.', '/');
-				String superName = "java/lang/Object";
-				String artifactReflectionDesc = "Lcom/braintribe/common/artifact/ArtifactReflection;";
-				String reflectionFieldName = "reflection";
+				ClassDesc thisClass = ClassDesc.of(className);
+				ClassDesc artifactReflection = ClassDesc.of("com.braintribe.common.artifact.ArtifactReflection");
+				ClassDesc standardArtifactReflection = ClassDesc.of("com.braintribe.common.artifact.StandardArtifactReflection");
 
-				// create class with a name based on artifact identification deduction
-				classWriter.visit(V1_6, ACC_PUBLIC + ACC_FINAL + ACC_SUPER, internalName, null, superName, null);
-
-				// add public static final field for the reflection instance
-				classWriter.visitField(ACC_PUBLIC + ACC_STATIC + ACC_FINAL, reflectionFieldName, artifactReflectionDesc, null, null);
-
-				// build class initializer
-				MethodVisitor mv = classWriter.visitMethod(ACC_PUBLIC + ACC_STATIC, "<clinit>", "()V", null, null);
-
-				String name = projectInfo.groupId + ":" + projectInfo.artifactId;
+				String name = projectInfo.name();
 				String versionedName = name + "#" + projectInfo.version;
 
-				fillStaticField(classWriter, internalName, mv, "groupId", projectInfo.groupId);
-				fillStaticField(classWriter, internalName, mv, "artifactId", projectInfo.artifactId);
-				fillStaticField(classWriter, internalName, mv, "version", projectInfo.version);
-				fillStaticField(classWriter, internalName, mv, "name", name);
-				fillStaticField(classWriter, internalName, mv, "versionedName", versionedName);
+				int publicStaticFinal = ClassFile.ACC_PUBLIC | ClassFile.ACC_STATIC | ClassFile.ACC_FINAL;
 
-				// instantiate plain StandardArtifactReflection instance which places it on
-				// stack
-				String implementationName = "com/braintribe/common/artifact/StandardArtifactReflection";
-				mv.visitTypeInsn(NEW, implementationName);
+				return ClassFile.of().build(thisClass, cb -> {
+					cb.withVersion(JAVA_6_VERSION, 0);
+					cb.withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_FINAL | ClassFile.ACC_SUPER);
 
-				// duplicate instance on stack for field assignment after constructor
-				mv.visitInsn(DUP);
+					cb.withField("reflection", artifactReflection, publicStaticFinal);
+					cb.withField("groupId", CD_String, publicStaticFinal);
+					cb.withField("artifactId", CD_String, publicStaticFinal);
+					cb.withField("version", CD_String, publicStaticFinal);
+					cb.withField("name", CD_String, publicStaticFinal);
+					cb.withField("versionedName", CD_String, publicStaticFinal);
 
-				// push constructor arguments on stack: groupId, artifactId, version, archetype
-				mv.visitLdcInsn(projectInfo.groupId);
-				mv.visitLdcInsn(projectInfo.artifactId);
-				mv.visitLdcInsn(projectInfo.version);
-				if (projectInfo.archetype != null)
-					mv.visitLdcInsn(projectInfo.archetype);
-				else
-					mv.visitInsn(ACONST_NULL);
+					// the class initializer fills the static fields
+					cb.withMethodBody(CLASS_INIT_NAME, MTD_void, ClassFile.ACC_PUBLIC | ClassFile.ACC_STATIC, cob -> {
+						fillStaticField(cob, thisClass, "groupId", projectInfo.groupId);
+						fillStaticField(cob, thisClass, "artifactId", projectInfo.artifactId);
+						fillStaticField(cob, thisClass, "version", projectInfo.version);
+						fillStaticField(cob, thisClass, "name", name);
+						fillStaticField(cob, thisClass, "versionedName", versionedName);
 
-				// invoke constructor of StandardArtifactReflection
-				mv.visitMethodInsn(INVOKESPECIAL, implementationName, "<init>",
-						"(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V", false);
+						// new StandardArtifactReflection(groupId, artifactId, version, archetype)
+						cob.new_(standardArtifactReflection) //
+								.dup() //
+								.loadConstant(projectInfo.groupId) //
+								.loadConstant(projectInfo.artifactId) //
+								.loadConstant(projectInfo.version);
 
-				// assign new StandardArtifactReflection instance of the static reflection field
-				mv.visitFieldInsn(PUTSTATIC, internalName, reflectionFieldName, artifactReflectionDesc);
+						if (projectInfo.archetype != null)
+							cob.loadConstant(projectInfo.archetype);
+						else
+							cob.aconst_null();
 
-				// return from class initializer
-				mv.visitInsn(RETURN);
-				mv.visitMaxs(6, 0);
-
-				return classWriter.toByteArray();
+						cob.invokespecial(standardArtifactReflection, INIT_NAME,
+								MethodTypeDesc.of(CD_void, CD_String, CD_String, CD_String, CD_String)) //
+								.putstatic(thisClass, "reflection", artifactReflection) //
+								.return_();
+					});
+				});
 			} catch (Exception e) {
 				throw new RuntimeException("Error while compiling artifact reflection information to bytecode for project: " + projectInfo.artifactId, e);
 			}
 		}
 
-		private void fillStaticField(ClassWriter classWriter, String internalName, MethodVisitor mv, String name, String value) {
-			// add public static final field for the reflection instance
-			String stringDesc = "Ljava/lang/String;";
-			classWriter.visitField(ACC_PUBLIC + ACC_STATIC + ACC_FINAL, name, stringDesc, null, null);
-
-			// push String argument for PUT instruction
-			mv.visitLdcInsn(value);
-			// assign pushed value to field
-			mv.visitFieldInsn(PUTSTATIC, internalName, name, stringDesc);
+		private void fillStaticField(CodeBuilder cob, ClassDesc thisClass, String name, String value) {
+			cob.loadConstant(value) //
+					.putstatic(thisClass, name, CD_String);
 		}
 
 		private String buildCanonizedClassName() {
