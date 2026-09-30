@@ -130,6 +130,28 @@ public interface Person extends GenericEntity {
 }
 ```
 
+### Indexing of Classpath Resources
+
+An artifact declares the files it publishes as classpath resources in `META-INF/classpath-resources.txt`, next to its resources. Each line is a file or a folder, relative to the resource folder. Blank lines and lines starting with `#` are ignored.
+
+```text
+# my-resources
+my-resources
+logo.svg
+```
+
+The task `index-classpath-resources` expands the declaration and writes `META-INF/classpath-index.txt`, with one line per declared file. The `processResources` task depends on it, so the index is packaged together with the resources it lists. An artifact without a declaration gets no index.
+
+When the sources hold nothing besides the declaration and the declared resources, the task also writes the marker `META-INF/classpath-resource-only`. An application assembler can drop the jar of such an artifact once the resources are extracted from it.
+
+The task fails when:
+
+* an entry is not a relative path inside the resource folder
+* a declared entry does not exist
+* a declared folder contains java sources
+
+Both files are written to `generated/main/resources`, which the plugin adds as a resource folder of the main source set. This is the same index the `index-classpath-resources` target of the ant build generates.
+
 ### Eclipse support
 
 The Hiconic plugin for Gradle automatically detects the presence of the optional Eclipse plugin for Gradle to properly configure Eclipse classpath and auto building.

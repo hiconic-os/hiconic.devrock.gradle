@@ -25,11 +25,13 @@ import org.gradle.plugins.ide.eclipse.model.EclipseModel;
 import org.gradle.plugins.ide.eclipse.model.Library;
 
 import hiconic.gradle.plugin.artifact.reflection.GenerateArtifactReflection;
+import hiconic.gradle.plugin.classpath.resources.IndexClasspathResources;
 import hiconic.gradle.plugin.gm.declaration.GenerateModelDeclaration;
 
 public class HiconicPlugin implements Plugin<Project> {
 
 	private static final String GENERATED_FOLDER = "generated/main/java";
+	private static final String GENERATED_RESOURCES_FOLDER = "generated/main/resources";
 
 	@Override
 	public void apply(Project project) {
@@ -41,6 +43,11 @@ public class HiconicPlugin implements Plugin<Project> {
 
 		compileTask.configure(task -> task.dependsOn(generateArtifactReflectionTask));
 
+		// the generated index is a resource, so it is copied to the output together with the resources it lists
+		TaskProvider<Task> indexClasspathResourcesTask = tasks.register("index-classpath-resources", task -> task.setGroup("hiconic"));
+
+		tasks.named(JavaPlugin.PROCESS_RESOURCES_TASK_NAME).configure(task -> task.dependsOn(indexClasspathResourcesTask));
+
 		// the actions are created after the build script of the project was evaluated, so that
 		// group, version and archetype are final, and so that all values they need are read at
 		// configuration time. An action must not touch the project while it runs.
@@ -51,6 +58,8 @@ public class HiconicPlugin implements Plugin<Project> {
 
 			if (projectInfo.isModel())
 				compileTask.configure(task -> task.doLast(new GenerateModelDeclaration(projectInfo)));
+
+			indexClasspathResourcesTask.configure(task -> task.doLast(new IndexClasspathResources(projectInfo)));
 		});
 
 		SourceSetContainer sourceSets = project.getExtensions().getByType(SourceSetContainer.class);
@@ -58,6 +67,7 @@ public class HiconicPlugin implements Plugin<Project> {
 		// Configure the main source set to include additional resources
 		SourceSet mainSourceSet = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME);
 		mainSourceSet.getResources().srcDir(GENERATED_FOLDER);
+		mainSourceSet.getResources().srcDir(GENERATED_RESOURCES_FOLDER);
 
 		publishGeneratedClassesToConsumers(project, generateArtifactReflectionTask);
 
@@ -90,7 +100,7 @@ public class HiconicPlugin implements Plugin<Project> {
 
 		// Access the Eclipse model for configuration
 		project.getExtensions().configure(EclipseModel.class, eclipseModel -> {
-			eclipseModel.synchronizationTasks("generate-artifact-reflection");
+			eclipseModel.synchronizationTasks("generate-artifact-reflection", "index-classpath-resources");
 			eclipseModel.autoBuildTasks("compileJava");
 
 			eclipseModel.getClasspath().getFile().whenMerged((org.gradle.plugins.ide.eclipse.model.Classpath classpath) -> {

@@ -15,6 +15,7 @@ import java.util.List;
 
 import org.gradle.api.Project;
 import org.gradle.api.file.FileCollection;
+import org.gradle.api.file.FileTree;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.SourceSetContainer;
 
@@ -42,8 +43,17 @@ public class ProjectInfo {
 	/**Compile classpath, which resolves dependency classes from their compile outputs, rather than jars. */
 	public final FileCollection compileClasspath;
 
+	/** the source folders of the resources of the main source set */
+	public final List<File> resourceDirs;
+
+	/** the resources of the main source set, as they are copied to the output */
+	public final FileTree resources;
+
+	/** the java sources of the main source set */
+	public final FileTree javaSources;
+
 	public ProjectInfo(String groupId, String artifactId, String version, String archetype, File projectDir, List<String> modelDependencies,
-			FileCollection classesDirs, FileCollection compileClasspath) {
+			FileCollection classesDirs, FileCollection compileClasspath, List<File> resourceDirs, FileTree resources, FileTree javaSources) {
 		this.groupId = groupId;
 		this.artifactId = artifactId;
 		this.version = version;
@@ -52,6 +62,9 @@ public class ProjectInfo {
 		this.modelDependencies = modelDependencies;
 		this.classesDirs = classesDirs;
 		this.compileClasspath = compileClasspath;
+		this.resourceDirs = resourceDirs;
+		this.resources = resources;
+		this.javaSources = javaSources;
 	}
 
 	public static ProjectInfo createFrom(Project project) {
@@ -73,12 +86,20 @@ public class ProjectInfo {
 				project.getProjectDir(), //
 				modelDependencies, //
 				mainSourceSet.getOutput().getClassesDirs(), //
-				mainSourceSet.getCompileClasspath());
+				mainSourceSet.getCompileClasspath(), //
+				new ArrayList<>(mainSourceSet.getResources().getSrcDirs()), //
+				mainSourceSet.getResources(), //
+				mainSourceSet.getJava());
 	}
 
 	/** the folder for the generated artifact reflection, model declaration and properties */
 	public File generatedFolder() {
 		return new File(projectDir, "generated/main/java");
+	}
+
+	/** the folder for the generated classpath resource index and marker */
+	public File generatedResourcesFolder() {
+		return new File(projectDir, "generated/main/resources");
 	}
 
 	public boolean isModel() {
